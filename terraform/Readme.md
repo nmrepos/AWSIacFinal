@@ -34,7 +34,7 @@ The infrastructure consists of a multi-tier architecture with the following comp
 - **Security Groups**: Network-level firewall rules
 - **Private S3 Buckets**: All public access blocked
 - **Database Isolation**: RDS instances in private subnets only
-- **Principle of Least Privilege**: Minimal required access permissions
+
 
 ## 🚀 Infrastructure Components
 
