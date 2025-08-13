@@ -1,0 +1,175 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'PROG 8870 Final Project - CloudFormation S3 Buckets with Versioning'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'dev'
+    Description: 'Environment name (dev, staging, prod)'
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  Owner:
+    Type: String
+    Default: 'student'
+    Description: 'Project owner/student name'
+
+  BucketPrefix:
+    Type: String
+    Default: 'prog8870-cf-bucket'
+    Description: 'Prefix for S3 bucket names'
+
+Resources:
+  # S3 Bucket 1
+  S3Bucket1:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketPrefix}-1-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: 'TransitionToIA'
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+            ExpirationInDays: 365
+            NoncurrentVersionExpirationInDays: 90
+      Tags:
+        - Key: Name
+          Value: !Sub '${BucketPrefix}-1'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: ManagedBy
+          Value: 'CloudFormation'
+
+  # S3 Bucket 2
+  S3Bucket2:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketPrefix}-2-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: 'TransitionToIA'
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+            ExpirationInDays: 365
+            NoncurrentVersionExpirationInDays: 90
+      Tags:
+        - Key: Name
+          Value: !Sub '${BucketPrefix}-2'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: ManagedBy
+          Value: 'CloudFormation'
+
+  # S3 Bucket 3
+  S3Bucket3:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketPrefix}-3-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: 'TransitionToIA'
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: STANDARD_IA
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+            ExpirationInDays: 365
+            NoncurrentVersionExpirationInDays: 90
+      Tags:
+        - Key: Name
+          Value: !Sub '${BucketPrefix}-3'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: ManagedBy
+          Value: 'CloudFormation'
+
+Outputs:
+  S3Bucket1Name:
+    Description: 'Name of S3 Bucket 1'
+    Value: !Ref S3Bucket1
+    Export:
+      Name: !Sub '${AWS::StackName}-Bucket1-Name'
+
+  S3Bucket1Arn:
+    Description: 'ARN of S3 Bucket 1'
+    Value: !GetAtt S3Bucket1.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-Bucket1-Arn'
+
+  S3Bucket2Name:
+    Description: 'Name of S3 Bucket 2'
+    Value: !Ref S3Bucket2
+    Export:
+      Name: !Sub '${AWS::StackName}-Bucket2-Name'
+
+  S3Bucket2Arn:
+    Description: 'ARN of S3 Bucket 2'
+    Value: !GetAtt S3Bucket2.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-Bucket2-Arn'
+
+  S3Bucket3Name:
+    Description: 'Name of S3 Bucket 3'
+    Value: !Ref S3Bucket3
+    Export:
+      Name: !Sub '${AWS::StackName}-Bucket3-Name'
+
+  S3Bucket3Arn:
+    Description: 'ARN of S3 Bucket 3'
+    Value: !GetAtt S3Bucket3.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-Bucket3-Arn'
+
+  StackInfo:
+    Description: 'CloudFormation Stack Information'
+    Value: !Sub 'Stack: ${AWS::StackName}, Region: ${AWS::Region}, Account: ${AWS::AccountId}'

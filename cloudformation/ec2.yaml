@@ -1,0 +1,424 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'PROG 8870 Final Project - CloudFormation EC2 Infrastructure with VPC'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'dev'
+    Description: 'Environment name (dev, staging, prod)'
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  Owner:
+    Type: String
+    Default: 'student'
+    Description: 'Project owner/student name'
+
+  InstanceType:
+    Type: String
+    Default: 't2.micro'
+    Description: 'EC2 instance type'
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+
+  KeyPairName:
+    Type: String
+    Description: 'EC2 Key Pair name for SSH access'
+    Default: ''
+
+  VpcCidr:
+    Type: String
+    Default: '10.1.0.0/16'
+    Description: 'CIDR block for VPC'
+
+  PublicSubnet1Cidr:
+    Type: String
+    Default: '10.1.1.0/24'
+    Description: 'CIDR block for public subnet 1'
+
+  PublicSubnet2Cidr:
+    Type: String
+    Default: '10.1.2.0/24'
+    Description: 'CIDR block for public subnet 2'
+
+  SSHLocation:
+    Type: String
+    Default: '0.0.0.0/0'
+    Description: 'IP address range that can SSH to EC2 instances'
+
+Mappings:
+  AWSRegionArch2AMI:
+    us-east-1:
+      HVM64: ami-0c02fb55956c7d316
+    us-east-2:
+      HVM64: ami-0277b52859bac6f4b
+    us-west-1:
+      HVM64: ami-0f5e8a042c8bfcd5e
+    us-west-2:
+      HVM64: ami-0a634ae95e11c6f91
+
+Conditions:
+  HasKeyPair: !Not [!Equals [!Ref KeyPairName, '']]
+
+Resources:
+  # VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-vpc'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: ManagedBy
+          Value: 'CloudFormation'
+
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-igw'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+
+  # Attach Internet Gateway to VPC
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  # Public Subnet 1
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet1Cidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-public-subnet-1'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+
+  # Public Subnet 2
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Ref PublicSubnet2Cidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-public-subnet-2'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+
+  # Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-public-rt'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+
+  # Default Public Route
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Public Subnet 1 Route Table Association
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  # Public Subnet 2 Route Table Association
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  # Security Group for EC2 instances
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${Environment}-cf-ec2-sg'
+      GroupDescription: 'Security group for EC2 instances'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHLocation
+          Description: 'SSH access'
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: 'HTTP access'
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: 'HTTPS access'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: 'All outbound traffic'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-ec2-sg'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+
+  # EC2 Instance 1
+  EC2Instance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [AWSRegionArch2AMI, !Ref 'AWS::Region', HVM64]
+      InstanceType: !Ref InstanceType
+      KeyName: !If [HasKeyPair, !Ref KeyPairName, !Ref 'AWS::NoValue']
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd mysql git htop
+          systemctl start httpd
+          systemctl enable httpd
+          
+          # Create a simple web page
+          cat > /var/www/html/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>PROG 8870 - CloudFormation EC2 Instance 1</title>
+              <style>
+                  body { font-family: Arial, sans-serif; margin: 40px; }
+                  .header { background-color: #e6f3ff; padding: 20px; border-radius: 5px; }
+                  .info { margin: 20px 0; }
+              </style>
+          </head>
+          <body>
+              <div class="header">
+                  <h1>PROG 8870 Final Project</h1>
+                  <h2>CloudFormation EC2 Instance 1 - ${Environment} Environment</h2>
+              </div>
+              
+              <div class="info">
+                  <h3>Instance Information:</h3>
+                  <ul>
+                      <li><strong>Instance ID:</strong> $(curl -s http://169.254.169.254/latest/meta-data/instance-id)</li>
+                      <li><strong>Instance Type:</strong> $(curl -s http://169.254.169.254/latest/meta-data/instance-type)</li>
+                      <li><strong>Availability Zone:</strong> $(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)</li>
+                      <li><strong>Public IP:</strong> $(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)</li>
+                      <li><strong>Private IP:</strong> $(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)</li>
+                  </ul>
+                  
+                  <h3>System Information:</h3>
+                  <ul>
+                      <li><strong>Hostname:</strong> $(hostname)</li>
+                      <li><strong>Date:</strong> $(date)</li>
+                  </ul>
+              </div>
+              
+              <div class="info">
+                  <p><strong>Status:</strong> ✅ Web server is running successfully!</p>
+                  <p><strong>Deployed via:</strong> AWS CloudFormation</p>
+                  <p><strong>Stack:</strong> ${AWS::StackName}</p>
+              </div>
+          </body>
+          </html>
+          EOF
+          
+          # Log deployment
+          echo "$(date): CloudFormation EC2 Instance 1 deployed successfully" >> /var/log/deployment.log
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 20
+            Encrypted: true
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-ec2-1'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Purpose
+          Value: 'CloudFormation Web Server 1'
+
+  # EC2 Instance 2
+  EC2Instance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [AWSRegionArch2AMI, !Ref 'AWS::Region', HVM64]
+      InstanceType: !Ref InstanceType
+      KeyName: !If [HasKeyPair, !Ref KeyPairName, !Ref 'AWS::NoValue']
+      SubnetId: !Ref PublicSubnet2
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd mysql git htop
+          systemctl start httpd
+          systemctl enable httpd
+          
+          # Create a simple web page
+          cat > /var/www/html/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>PROG 8870 - CloudFormation EC2 Instance 2</title>
+              <style>
+                  body { font-family: Arial, sans-serif; margin: 40px; }
+                  .header { background-color: #ffe6e6; padding: 20px; border-radius: 5px; }
+                  .info { margin: 20px 0; }
+              </style>
+          </head>
+          <body>
+              <div class="header">
+                  <h1>PROG 8870 Final Project</h1>
+                  <h2>CloudFormation EC2 Instance 2 - ${Environment} Environment</h2>
+              </div>
+              
+              <div class="info">
+                  <h3>Instance Information:</h3>
+                  <ul>
+                      <li><strong>Instance ID:</strong> $(curl -s http://169.254.169.254/latest/meta-data/instance-id)</li>
+                      <li><strong>Instance Type:</strong> $(curl -s http://169.254.169.254/latest/meta-data/instance-type)</li>
+                      <li><strong>Availability Zone:</strong> $(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone)</li>
+                      <li><strong>Public IP:</strong> $(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)</li>
+                      <li><strong>Private IP:</strong> $(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)</li>
+                  </ul>
+                  
+                  <h3>System Information:</h3>
+                  <ul>
+                      <li><strong>Hostname:</strong> $(hostname)</li>
+                      <li><strong>Date:</strong> $(date)</li>
+                  </ul>
+              </div>
+              
+              <div class="info">
+                  <p><strong>Status:</strong> ✅ Web server is running successfully!</p>
+                  <p><strong>Deployed via:</strong> AWS CloudFormation</p>
+                  <p><strong>Stack:</strong> ${AWS::StackName}</p>
+              </div>
+          </body>
+          </html>
+          EOF
+          
+          # Log deployment
+          echo "$(date): CloudFormation EC2 Instance 2 deployed successfully" >> /var/log/deployment.log
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 20
+            Encrypted: true
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-ec2-2'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Purpose
+          Value: 'CloudFormation Web Server 2'
+
+Outputs:
+  VPCId:
+    Description: 'VPC ID'
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}-VPC-ID'
+
+  PublicSubnet1Id:
+    Description: 'Public Subnet 1 ID'
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnet1-ID'
+
+  PublicSubnet2Id:
+    Description: 'Public Subnet 2 ID'
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnet2-ID'
+
+  EC2Instance1Id:
+    Description: 'EC2 Instance 1 ID'
+    Value: !Ref EC2Instance1
+
+  EC2Instance1PublicIP:
+    Description: 'EC2 Instance 1 Public IP'
+    Value: !GetAtt EC2Instance1.PublicIp
+
+  EC2Instance1PublicDNS:
+    Description: 'EC2 Instance 1 Public DNS'
+    Value: !GetAtt EC2Instance1.PublicDnsName
+
+  EC2Instance2Id:
+    Description: 'EC2 Instance 2 ID'
+    Value: !Ref EC2Instance2
+
+  EC2Instance2PublicIP:
+    Description: 'EC2 Instance 2 Public IP'
+    Value: !GetAtt EC2Instance2.PublicIp
+
+  EC2Instance2PublicDNS:
+    Description: 'EC2 Instance 2 Public DNS'
+    Value: !GetAtt EC2Instance2.PublicDnsName
+
+  SecurityGroupId:
+    Description: 'Security Group ID'
+    Value: !Ref EC2SecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityGroup-ID'
+
+  WebsiteURL1:
+    Description: 'Website URL for Instance 1'
+    Value: !Sub 'http://${EC2Instance1.PublicDnsName}'
+
+  WebsiteURL2:
+    Description: 'Website URL for Instance 2'
+    Value: !Sub 'http://${EC2Instance2.PublicDnsName}'

@@ -1,0 +1,282 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'PROG 8870 Final Project - CloudFormation RDS MySQL Database'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: 'dev'
+    Description: 'Environment name (dev, staging, prod)'
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  Owner:
+    Type: String
+    Default: 'student'
+    Description: 'Project owner/student name'
+
+  DBInstanceClass:
+    Type: String
+    Default: 'db.t3.micro'
+    Description: 'RDS instance class'
+    AllowedValues:
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+
+  DBName:
+    Type: String
+    Default: 'prog8870db'
+    Description: 'MySQL database name'
+    MinLength: 1
+    MaxLength: 64
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+
+  DBUsername:
+    Type: String
+    Default: 'admin'
+    Description: 'MySQL database admin username'
+    MinLength: 1
+    MaxLength: 16
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: 'MySQL database admin password'
+    MinLength: 8
+    MaxLength: 41
+    AllowedPattern: '[a-zA-Z0-9!@#$%^&*()_+=-]*'
+    ConstraintDescription: 'Must contain 8-41 characters with letters, numbers, and special characters'
+
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+    Description: 'Database allocated storage in GB'
+    MinValue: 20
+    MaxValue: 100
+
+  DBPubliclyAccessible:
+    Type: String
+    Default: 'true'
+    Description: 'Make database publicly accessible (for this project only)'
+    AllowedValues:
+      - 'true'
+      - 'false'
+
+  AllowedCIDR:
+    Type: String
+    Default: '0.0.0.0/0'
+    Description: 'CIDR block allowed to access database'
+
+  VPCStackName:
+    Type: String
+    Default: ''
+    Description: 'Name of VPC CloudFormation stack (leave empty to create new VPC resources)'
+
+Conditions:
+  CreateVPCResources: !Equals [!Ref VPCStackName, '']
+  UseExistingVPC: !Not [!Equals [!Ref VPCStackName, '']]
+
+Resources:
+  # VPC Resources (only created if VPCStackName is empty)
+  VPC:
+    Type: AWS::EC2::VPC
+    Condition: CreateVPCResources
+    Properties:
+      CidrBlock: '10.2.0.0/16'
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-db-vpc'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+
+  # Private Subnet 1
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVPCResources
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: '10.2.10.0/24'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-db-private-subnet-1'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+
+  # Private Subnet 2
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVPCResources
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: '10.2.20.0/24'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-db-private-subnet-2'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+
+  # DB Subnet Group
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub '${Environment}-cf-db-subnet-group'
+      DBSubnetGroupDescription: 'Subnet group for RDS database'
+      SubnetIds:
+        - !If 
+          - CreateVPCResources
+          - !Ref PrivateSubnet1
+          - !ImportValue 
+            Fn::Sub: '${VPCStackName}-PrivateSubnet1-ID'
+        - !If
+          - CreateVPCResources
+          - !Ref PrivateSubnet2
+          - !ImportValue
+            Fn::Sub: '${VPCStackName}-PrivateSubnet2-ID'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-db-subnet-group'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+
+  # Security Group for RDS
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${Environment}-cf-rds-sg'
+      GroupDescription: 'Security group for RDS MySQL database'
+      VpcId: !If
+        - CreateVPCResources
+        - !Ref VPC
+        - !ImportValue
+          Fn::Sub: '${VPCStackName}-VPC-ID'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: !Ref AllowedCIDR
+          Description: 'MySQL access'
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: 'All outbound traffic'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-rds-sg'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+
+  # DB Parameter Group
+  DBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Family: 'mysql8.0'
+      Description: 'MySQL 8.0 parameter group'
+      Parameters:
+        innodb_buffer_pool_size: '{DBInstanceClassMemory*3/4}'
+        max_connections: 100
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-mysql-params'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+
+  # RDS MySQL Instance
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    Properties:
+      DBInstanceIdentifier: !Sub '${Environment}-cf-mysql-db'
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: 'mysql'
+      EngineVersion: '8.0.35'
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      AllocatedStorage: !Ref DBAllocatedStorage
+      MaxAllocatedStorage: !Ref DBAllocatedStorage
+      StorageType: 'gp3'
+      StorageEncrypted: true
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      DBParameterGroupName: !Ref DBParameterGroup
+      PubliclyAccessible: !Ref DBPubliclyAccessible
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      MonitoringInterval: 60
+      EnablePerformanceInsights: true
+      DeletionProtection: false
+      AutoMinorVersionUpgrade: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-cf-mysql-db'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: Engine
+          Value: 'MySQL'
+
+  # CloudWatch Log Group
+  DBLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/rds/instance/${DBInstance}/error'
+      RetentionInDays: 7
+
+Outputs:
+  DBInstanceId:
+    Description: 'RDS Instance ID'
+    Value: !Ref DBInstance
+
+  DBEndpoint:
+    Description: 'RDS Instance Endpoint'
+    Value: !GetAtt DBInstance.Endpoint.Address
+
+  DBPort:
+    Description: 'RDS Instance Port'
+    Value: !GetAtt DBInstance.Endpoint.Port
+
+  DBName:
+    Description: 'Database Name'
+    Value: !Ref DBName
+
+  DBUsername:
+    Description: 'Database Admin Username'
+    Value: !Ref DBUsername
+
+  DBConnectionString:
+    Description: 'Database Connection String'
+    Value: !Sub 'mysql://${DBUsername}:${DBPassword}@${DBInstance.Endpoint.Address}:${DBInstance.Endpoint.Port}/${DBName}'
+
+  SecurityGroupId:
+    Description: 'Database Security Group ID'
+    Value: !Ref DBSecurityGroup
+
+  SubnetGroupName:
+    Description: 'DB Subnet Group Name'
+    Value: !Ref DBSubnetGroup
+
+  DatabaseURL:
+    Description: 'Database URL for applications'
+    Value: !Sub 'mysql://${DBInstance.Endpoint.Address}:${DBInstance.Endpoint.Port}/${DBName}'
