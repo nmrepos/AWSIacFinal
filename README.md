@@ -28,3 +28,5 @@ This repository contains Infrastructure as Code (IaC) templates and modules for 
    ```sh
    aws cloudformation create-stack --stack-name my-stack --template-body file://ec2.yaml --parameters ...
    
+## PPT
+[Click To Access the PPT](https://github.com/nmrepos/AWSIacFinal/blob/main/PPT.pdf)
