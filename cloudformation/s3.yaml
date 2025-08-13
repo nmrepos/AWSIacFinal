@@ -96,3 +96,4 @@ Outputs:
       - Bucket1Arn: !GetAtt S3Bucket1.Arn
         Bucket2Arn: !GetAtt S3Bucket2.Arn
         Bucket3Arn: !GetAtt S3Bucket3.Arn
+        
